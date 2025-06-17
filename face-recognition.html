@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+	<head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<title>人脸识别验证</title>
+		<style>
+			* {
+				margin: 0;
+				padding: 0;
+				box-sizing: border-box;
+				font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+			}
+
+			body {
+				background-color: #fff;
+				display: flex;
+				justify-content: center;
+				align-items: center;
+				min-height: 100vh;
+				overflow: hidden;
+			}
+
+			.live-camera {
+				width: 100%;
+				height: 100vh;
+				display: flex;
+				flex-direction: column;
+				justify-content: center;
+				align-items: center;
+				background-color: #000;
+				position: relative;
+			}
+
+			.preview {
+				position: relative;
+				width: 100%;
+				height: 100%;
+				display: flex;
+				background-color: #fff;
+				flex-direction: column;
+				justify-content: center;
+				align-items: center;
+			}
+
+			.camera-container {
+				position: relative;
+				width: 6rem;
+				height: 6rem;
+				border-radius: 50%;
+				overflow: hidden;
+				box-shadow: 0 0 0.2rem rgba(0, 0, 0, 0.3);
+			}
+
+			#cameraVideo {
+				width: 100%;
+				height: 100%;
+				object-fit: cover;
+				transform: scaleX(-1);
+				/* 镜像翻转 */
+			}
+
+			.outline-box {
+				position: absolute;
+				top: 0;
+				left: 0;
+				width: 100%;
+				height: 100%;
+				pointer-events: none;
+			}
+
+			.screenshot-img {
+				position: absolute;
+				top: 0;
+				left: 0;
+				width: 100%;
+				height: 100%;
+				object-fit: cover;
+				border-radius: 50%;
+				z-index: 10;
+			}
+
+			.outline-img {
+				position: absolute;
+				width: 200%;
+				height: 355%;
+				left: -50%;
+				top: -141.5%;
+				opacity: 0.7;
+				z-index: 5;
+			}
+
+			.controls {
+				position: absolute;
+				bottom: 50px;
+				width: 100%;
+				padding: 0 20px;
+				z-index: 20;
+				text-align: center;
+			}
+
+			.status-message {
+				color: white;
+				font-size: 0.14rem;
+				margin-bottom: 0.2rem;
+				text-align: center;
+				padding: 0 0.2rem;
+			}
+
+			.btn-container {
+				display: flex;
+				justify-content: space-around;
+				max-width: 6rem;
+				margin: 0 auto;
+			}
+
+			.btn {
+				background-color: #d41e19;
+				color: white;
+				width: 2.5rem;
+				padding: 0.12rem 0;
+				text-align: center;
+				font-size: 0.14rem;
+				border-radius: 0.3rem;
+				cursor: pointer;
+				transition: background-color 0.3s;
+			}
+
+			.btn:active {
+				background-color: #b31814;
+			}
+
+			.btn.disabled {
+				background-color: #d9d9d9;
+				cursor: not-allowed;
+			}
+
+			.countdown {
+				color: #d41e19;
+				font-size: 0.16rem;
+				margin-top: 0.2rem;
+				font-weight: bold;
+			}
+
+			.success-message {
+				color: #4CAF50;
+				font-size: 0.16rem;
+				margin: 0.2rem 0;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="live-camera">
+			<div class="preview">
+				<div class="camera-container">
+					<video id="cameraVideo" autoplay playsinline></video>
+					<div class="outline-box">
+						<img id="screenshotImg" class="screenshot-img">
+						<img id="outlineImg" class="outline-img">
+					</div>
+				</div>
+
+				<div class="controls">
+					<div id="statusArea">
+						<!-- 状态信息将由JS动态填充 -->
+					</div>
+
+					<div id="buttonArea">
+						<!-- 按钮将由JS动态填充 -->
+					</div>
+
+					<div id="countdown" class="countdown" style="display: none;">
+						倒计时<span id="countdownValue">5</span>秒
+					</div>
+				</div>
+			</div>
+		</div>
+		<script type="text/javascript" src="./uni.webview.1.5.6.js"></script>
+		<script>
+			(function() {
+				function setRem() {
+					const winW = document.documentElement.clientWidth; // 获取窗口宽度
+					const remValue = winW / 7.5; // 1rem = 窗口宽度的1/750 * 100
+					document.documentElement.style.fontSize = remValue + 'px';
+				}
+				// 初始化
+				setRem();
+				// 监听窗口变化
+				window.addEventListener('resize', setRem);
+			})();
+
+			// 全局变量
+			const state = {
+				windowWidth: window.innerWidth,
+				windowHeight: window.innerHeight,
+				cameraStream: null,
+				faceStatus: null,
+				isCount: 5,
+				disBtn: false,
+				countdownInterval: null,
+				currentCamera: 'user' // 'user' 前置摄像头, 'environment' 后置摄像头
+			};
+
+			// DOM元素
+			const videoElement = document.getElementById('cameraVideo');
+			const screenshotImg = document.getElementById('screenshotImg');
+			const outlineImg = document.getElementById('outlineImg');
+			const statusArea = document.getElementById('statusArea');
+			const buttonArea = document.getElementById('buttonArea');
+			const countdownElement = document.getElementById('countdown');
+			const countdownValue = document.getElementById('countdownValue');
+			// 获取url参数
+			const PARAMS = {}
+
+			// 初始化
+			document.addEventListener('DOMContentLoaded', () => {
+				// 基础参数
+				PARAMS.token = getQueryParam("token")
+				PARAMS.host = getQueryParam("host")
+				PARAMS.platform = getQueryParam("platform")
+				// 跳转考试的参数
+				PARAMS.appId = getQueryParam("tkhId")
+				PARAMS.examId = getQueryParam("modId")
+				PARAMS.itmId = getQueryParam("itmId")
+				PARAMS.endTime = getQueryParam("endTime")
+
+				initCamera();
+				setupEventListeners();
+				updateUI();
+			});
+
+			// 初始化摄像头
+			async function initCamera() {
+				try {
+					state.cameraStream = await navigator.mediaDevices.getUserMedia({
+						video: {
+							facingMode: state.currentCamera,
+							width: {
+								ideal: 1280
+							},
+							height: {
+								ideal: 720
+							}
+						},
+						audio: false
+					});
+
+					videoElement.srcObject = state.cameraStream;
+					outlineImg.src = 'https://example.com/path/to/face-outline.png'; // 替换为实际路径
+				} catch (error) {
+					console.error('摄像头访问失败:', error);
+					statusArea.innerHTML = '<div class="status-message">无法访问摄像头，请检查权限设置</div>';
+				}
+			}
+
+			// 设置事件监听器
+			function setupEventListeners() {
+				// 窗口大小变化时更新尺寸
+				window.addEventListener('resize', () => {
+					state.windowWidth = window.innerWidth;
+					state.windowHeight = window.innerHeight;
+				});
+
+				// 页面可见性变化处理
+				document.addEventListener('visibilitychange', () => {
+					if (document.visibilityState === 'hidden') {
+						handleAppBackground();
+					} else {
+						handleAppForeground();
+					}
+				});
+			}
+
+			// 更新UI显示
+			function updateUI() {
+				statusArea.innerHTML = '';
+				buttonArea.innerHTML = '';
+
+				switch (state.faceStatus) {
+					case 'Fail':
+						statusArea.innerHTML = '<div class="status-message">人脸识别验证失败</div>';
+						buttonArea.innerHTML = `
+                        <div class="btn-container">
+                            <div class="btn" onclick="startPreview()">重新验证</div>
+                            <div class="btn" onclick="goBack()">取消</div>
+                        </div>
+                    `;
+						break;
+
+					case 'sucs':
+						statusArea.innerHTML = '<div class="success-message">人脸识别验证成功,即将开始考试</div>';
+						break;
+
+					case 'pending':
+						statusArea.innerHTML = '<div class="status-message">正在进行验证......</div>';
+						break;
+
+					default:
+						if (!document.querySelector('.camera-container').style.display) {
+							statusArea.innerHTML = `
+                            <div class="status-message">
+                                您正在进行考试认证,请将脸部置于采集框内，并确保由本人亲自操作
+                            </div>
+                        `;
+						}
+
+						buttonArea.innerHTML = `
+                        <div class="btn-container">
+                            <div class="btn" onclick="flipCamera()">切换摄像头</div>
+                            <div class="btn ${state.disBtn ? 'disabled' : ''}" onclick="startValidation()">
+                                开始验证
+                            </div>
+                        </div>
+                    `;
+
+						countdownElement.style.display = state.disBtn ? 'block' : 'none';
+						break;
+				}
+			}
+
+			// 开始验证
+			function startValidation() {
+				if (state.disBtn) return;
+
+				state.disBtn = true;
+				state.isCount = 5;
+				countdownValue.textContent = state.isCount;
+				countdownElement.style.display = 'block';
+				updateUI();
+
+				state.countdownInterval = setInterval(() => {
+					state.isCount--;
+					countdownValue.textContent = state.isCount;
+
+					if (state.isCount === 0) {
+						clearInterval(state.countdownInterval);
+						captureImage();
+					}
+				}, 1000);
+			}
+
+			function getQueryParam(key) {
+				const regex = new RegExp(`[?&]${key}=([^&#]*)`);
+				const match = window.location.search.match(regex);
+				return match ? decodeURIComponent(match[1]) : null;
+			}
+
+			// 捕获图像
+			function captureImage() {
+				const canvas = document.createElement('canvas');
+				const context = canvas.getContext('2d');
+
+				canvas.width = videoElement.videoWidth;
+				canvas.height = videoElement.videoHeight;
+
+				// 绘制镜像图像
+				context.translate(canvas.width, 0);
+				context.scale(-1, 1);
+				context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+
+				// 获取Base64图像
+				const imageDataURL = canvas.toDataURL('image/jpeg', 0.8);
+				screenshotImg.src = imageDataURL;
+				screenshotImg.style.display = 'block';
+
+				state.faceStatus = 'pending';
+				updateUI();
+
+				// 模拟人脸识别API请求
+				setTimeout(() => {
+					// 这里模拟50%的成功率
+					const isSuccess = Math.random() > 0.5;
+
+					if (isSuccess) {
+						state.faceStatus = 'sucs';
+						// 模拟跳转到考试页面
+						setTimeout(() => {
+							alert('即将开始考试');
+							// window.location.href = 'exam.html';
+						}, 2000);
+					} else {
+						state.faceStatus = 'Fail';
+					}
+
+					updateUI();
+				}, 2000);
+			}
+
+			// 请求服务端
+			function requestRecognition() {
+				// 获取存储的登录 URL
+				const loginUrl = PARAMS.host; // 替代 uni.getStorageSync
+
+				// 创建 XMLHttpRequest 对象
+				const xhr = new XMLHttpRequest();
+				const url = `${loginUrl}/app/api/face/recognit`;
+
+				// 配置请求参数
+				xhr.open('POST', url, true);
+				xhr.setRequestHeader('Content-Type', 'application/json'); // 明确设置 JSON 类型[5,6](@ref)
+				xhr.timeout = 60000; // 设置超时时间（单位：毫秒）
+
+				// 保留 this 引用（根据你的上下文可能需要调整）
+				const that = this;
+
+				// 响应处理逻辑
+				xhr.onload = function() {
+					if (xhr.status >= 200 && xhr.status < 300) {
+						try {
+							const res = JSON.parse(xhr.responseText);
+
+							if (res.data && res.data.resultCode === '200' && res.data.matchResult === '0') {
+								that.faceStuas = 'sucs';
+								setTimeout(() => that.goExam(), 3000);
+							} else {
+								handleFailure(res);
+								// 显示服务器返回的错误信息
+								if (res.data && res.data.resultMsg) {
+									showToast(res.data.resultMsg); // 替代 plus.nativeUI.toast
+								}
+							}
+						} catch (e) {
+							handleFailure({
+								error: 'JSON 解析失败'
+							});
+							showToast('响应数据格式错误');
+						}
+					} else {
+						handleFailure({
+							status: xhr.status
+						});
+						showToast(`请求失败，状态码: ${xhr.status}`);
+					}
+				};
+
+				// 错误处理
+				xhr.onerror = function() {
+					handleFailure({
+						error: '网络错误'
+					});
+					showToast('网络请求失败');
+				};
+
+				// 超时处理
+				xhr.ontimeout = function() {
+					handleFailure({
+						error: '请求超时'
+					});
+					showToast('请求已超时');
+				};
+
+				// 发送请求（转换数据为 JSON 字符串）[6,7](@ref)
+				xhr.send(JSON.stringify({
+					imgBase: src,
+					wsType: PARAMS.platform === 'ios' ? '2' : '3'
+				}));
+			}
+
+			// 公共失败处理函数
+			function handleFailure(res) {
+				that.faceStuas = 'Fail';
+				that.screenShotImg = '';
+				console.log(res, 'reess');
+			}
+
+			// 替代 plus.nativeUI.toast
+			function showToast(message) {
+				// 根据运行环境选择提示方式
+				if (typeof plus !== 'undefined') {
+					plus.nativeUI.toast(message);
+				} else {
+					// 浏览器环境使用简单提示
+					alert(message);
+					// 或更友好的方式：创建 DOM 元素显示提示
+				}
+			}
+
+			// 开始预览
+			function startPreview() {
+				state.faceStatus = null;
+				state.disBtn = false;
+				state.isCount = 5;
+				countdownElement.style.display = 'none';
+				screenshotImg.style.display = 'none';
+				updateUI();
+
+				// 重新启动摄像头
+				if (!state.cameraStream) {
+					initCamera();
+				}
+			}
+
+			// 切换摄像头
+			function flipCamera() {
+				// 停止当前流
+				if (state.cameraStream) {
+					state.cameraStream.getTracks().forEach(track => track.stop());
+				}
+
+				// 切换摄像头
+				state.currentCamera = state.currentCamera === 'user' ? 'environment' : 'user';
+				initCamera();
+			}
+
+			// 处理应用进入后台
+			function handleAppBackground() {
+				if (state.countdownInterval) {
+					clearInterval(state.countdownInterval);
+					state.countdownInterval = null;
+					state.isCount = 5;
+					state.disBtn = false;
+					countdownElement.style.display = 'none';
+				}
+			}
+
+			// 处理应用回到前台
+			function handleAppForeground() {
+				// 重新开始预览
+				startPreview();
+			}
+
+			// 返回操作
+			function goBack() {
+				// 停止摄像头
+				if (state.cameraStream) {
+					state.cameraStream.getTracks().forEach(track => track.stop());
+				}
+
+				// 返回上一页
+				// history.back();
+				alert('返回上一页');
+				uni.navigateBack({
+					delta: 1
+				});
+			}
+		</script>
+	</body>
+</html>
