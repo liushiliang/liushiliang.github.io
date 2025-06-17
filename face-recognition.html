@@ -50,6 +50,7 @@
 				border-radius: 50%;
 				overflow: hidden;
 				box-shadow: 0 0 0.2rem rgba(0, 0, 0, 0.3);
+				margin-top: -1rem;
 			}
 
 			#cameraVideo {
@@ -109,21 +110,21 @@
 
 			.btn-container {
 				display: flex;
-				justify-content: space-around;
-				max-width: 6rem;
+				justify-content: space-between;
 				margin: 0 auto;
+				padding: 0 0.2rem;
 			}
 
 			.btn {
 				background-color: #d41e19;
 				color: white;
 				width: 2.5rem;
-				padding: 0.12rem 0;
 				text-align: center;
-				font-size: 0.14rem;
-				border-radius: 0.3rem;
+				font-size: 0.28rem;
+				/* border-radius: 0.3rem; */
 				cursor: pointer;
 				transition: background-color 0.3s;
+				line-height: 0.80rem;
 			}
 
 			.btn:active {
@@ -164,13 +165,13 @@
 					<div id="statusArea">
 						<!-- 状态信息将由JS动态填充 -->
 					</div>
-
-					<div id="buttonArea">
-						<!-- 按钮将由JS动态填充 -->
-					</div>
-
+					
 					<div id="countdown" class="countdown" style="display: none;">
 						倒计时<span id="countdownValue">5</span>秒
+					</div>
+					
+					<div id="buttonArea">
+						<!-- 按钮将由JS动态填充 -->
 					</div>
 				</div>
 			</div>
