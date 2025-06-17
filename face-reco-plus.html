@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>人脸识别拍照系统</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/face-landmarks-detection@0.0.1/dist/face-landmarks-detection.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #1a237e, #311b92);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            color: white;
+            overflow: hidden;
+        }
+        
+        .container {
+            width: 100%;
+            max-width: 500px;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            position: relative;
+            z-index: 1;
+        }
+        
+        .header {
+            text-align: center;
+            padding: 20px 0;
+            position: absolute;
+            top: 0;
+            width: 100%;
+            background: rgba(26, 35, 126, 0.8);
+            z-index: 20;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        }
+        
+        h1 {
+            font-size: 1.5rem;
+            margin-bottom: 8px;
+            letter-spacing: 1px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        
+        .instructions {
+            font-size: 14px;
+            opacity: 0.9;
+            max-width: 80%;
+            margin: 0 auto;
+            line-height: 1.5;
+        }
+        
+        .camera-container {
+            position: relative;
+            width: 100%;
+            height: 70vh;
+            max-height: 500px;
+            margin: 80px auto 20px;
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.5);
+            background: #000;
+        }
+        
+        #cameraPreview {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        
+        .circle {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 260px;
+            height: 260px;
+            border-radius: 50%;
+            border: 3px solid rgba(255, 255, 255, 0.7);
+            box-shadow: 0 0 0 100vh rgba(0, 0, 0, 0.7);
+        }
+        
+        .face-guide {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 220px;
+            height: 280px;
+            z-index: 5;
+            opacity: 0.7;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 30px;
+            margin-top: 20px;
+            z-index: 10;
+        }
+        
+        .btn {
+            width: 65px;
+            height: 65px;
+            border-radius: 50%;
+            border: none;
+            color: white;
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+            transition: all 0.3s ease;
+        }
+        
+        .btn:hover {
+            transform: scale(1.05);
+        }
+        
+        .btn:active {
+            transform: scale(0.95);
+        }
+        
+        .btn-capture {
+            background: linear-gradient(135deg, #00e676, #00b248);
+            width: 75px;
+            height: 75px;
+        }
+        
+        .btn-switch {
+            background: linear-gradient(135deg, #2979ff, #2962ff);
+        }
+        
+        #photoResult {
+            display: none;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            z-index: 15;
+        }
+        
+        .result-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.95);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 20;
+            padding: 20px;
+        }
+        
+        .result-container.active {
+            display: flex;
+        }
+        
+        .result-image {
+            width: 85%;
+            max-width: 320px;
+            height: 320px;
+            border-radius: 20px;
+            overflow: hidden;
+            margin-bottom: 25px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .result-image img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        .result-actions {
+            display: flex;
+            gap: 20px;
+        }
+        
+        .result-btn {
+            padding: 12px 30px;
+            border-radius: 50px;
+            border: none;
+            font-weight: bold;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            min-width: 120px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        
+        .btn-retake {
+            background: linear-gradient(135deg, #ff5252, #ff1744);
+            color: white;
+        }
+        
+        .btn-use {
+            background: linear-gradient(135deg, #2979ff, #2962ff);
+            color: white;
+        }
+        
+        .status {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(41, 121, 255, 0.9);
+            padding: 10px 25px;
+            border-radius: 30px;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            z-index: 15;
+        }
+        
+        .loading {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 25;
+        }
+        
+        .loading.active {
+            display: flex;
+        }
+        
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top: 5px solid #2979ff;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .message {
+            text-align: center;
+            max-width: 80%;
+            line-height: 1.6;
+        }
+        
+        .success {
+            color: #00e676;
+        }
+        
+        .error {
+            color: #ff5252;
+        }
+        
+        .face-point {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background: #00e676;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 10px #00e676;
+            z-index: 10;
+        }
+        
+        footer {
+            position: absolute;
+            bottom: 15px;
+            text-align: center;
+            font-size: 12px;
+            opacity: 0.7;
+            z-index: 5;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1><i class="fas fa-face-recognition"></i> 人脸识别拍照系统</h1>
+            <p class="instructions">请将面部对准圆形区域并保持光线充足</p>
+        </div>
+        
+        <div class="camera-container">
+            <video id="cameraPreview" autoplay playsinline></video>
+            <canvas id="canvas" style="display:none;"></canvas>
+            <img id="photoResult">
+            
+            <div class="overlay">
+                <div class="circle"></div>
+                <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 250'%3E%3Cpath d='M100,20 C150,30 180,80 180,120 C180,160 150,200 100,210 C50,200 20,160 20,120 C20,80 50,30 100,20 Z' fill='none' stroke='%2300e676' stroke-width='2' stroke-dasharray='5,5'/%3E%3C/svg%3E" class="face-guide">
+            </div>
+            
+            <div class="status">
+                <i class="fas fa-circle-notch fa-spin"></i> <span id="statusText">正在检测人脸...</span>
+            </div>
+            
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <div class="message" id="loadingMessage">正在识别人脸，请稍候...</div>
+            </div>
+        </div>
+        
+        <div class="controls">
+            <button class="btn btn-switch" id="switchBtn" title="切换摄像头">
+                <i class="fas fa-sync-alt"></i>
+            </button>
+            <button class="btn btn-capture" id="captureBtn" title="拍照">
+                <i class="fas fa-camera"></i>
+            </button>
+        </div>
+        
+        <div class="result-container" id="resultContainer">
+            <div class="result-image">
+                <img id="resultPhoto" src="">
+            </div>
+            <div class="result-actions">
+                <button class="result-btn btn-retake" id="retakeBtn">
+                    <i class="fas fa-redo"></i> 重拍
+                </button>
+                <button class="result-btn btn-use" id="useBtn">
+                    <i class="fas fa-check"></i> 使用照片
+                </button>
+            </div>
+        </div>
+        
+        <footer>
+            <p>基于HTML5+的人脸识别技术 | v2.0</p>
+        </footer>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // 页面元素
+            const video = document.getElementById('cameraPreview');
+            const canvas = document.getElementById('canvas');
+            const photoResult = document.getElementById('photoResult');
+            const captureBtn = document.getElementById('captureBtn');
+            const switchBtn = document.getElementById('switchBtn');
+            const retakeBtn = document.getElementById('retakeBtn');
+            const useBtn = document.getElementById('useBtn');
+            const resultContainer = document.getElementById('resultContainer');
+            const resultPhoto = document.getElementById('resultPhoto');
+            const statusText = document.getElementById('statusText');
+            const loading = document.getElementById('loading');
+            const loadingMessage = document.getElementById('loadingMessage');
+            
+            // 全局变量
+            let camera = null;
+            let currentCamera = 1; // 1: 后置，2: 前置
+            let faceDetectionInterval = null;
+            let facePoints = [];
+            let faceModel = null;
+            
+            // 初始化摄像头
+            function initCamera(cameraId = 1) {
+                // 停止当前摄像头
+                if (camera) {
+                    camera.close();
+                }
+                
+                // 清除人脸检测
+                clearInterval(faceDetectionInterval);
+                facePoints.forEach(point => point.remove());
+                facePoints = [];
+                
+                // 创建摄像头对象
+                camera = plus.camera.getCamera(cameraId);
+                
+                // 摄像头参数
+                const cameraOptions = {
+                    video: {
+                        resolution: '720p',
+                        frameRate: 30
+                    },
+                    audio: false
+                };
+                
+                // 启动摄像头
+                camera.startVideoCapture(videoStream => {
+                    video.srcObject = videoStream;
+                    video.play();
+                    
+                    // 更新状态
+                    statusText.innerHTML = '<i class="fas fa-check-circle"></i> 摄像头已就绪';
+                    
+                    // 开始人脸检测
+                    startFaceDetection();
+                }, error => {
+                    console.error('摄像头启动失败:', error);
+                    statusText.innerHTML = `<i class="fas fa-exclamation-triangle"></i> 摄像头错误: ${error.message}`;
+                }, cameraOptions);
+            }
+            
+            // 加载人脸识别模型
+            async function loadFaceModel() {
+                try {
+                    loadingMessage.textContent = "正在加载人脸识别模型...";
+                    loading.classList.add('active');
+                    
+                    // 加载TensorFlow.js模型
+                    await tf.ready();
+                    faceModel = await faceLandmarksDetection.load(
+                        faceLandmarksDetection.SupportedPackages.mediapipeFacemesh,
+                        { maxFaces: 1 }
+                    );
+                    
+                    loading.classList.remove('active');
+                    return true;
+                } catch (error) {
+                    console.error('模型加载失败:', error);
+                    loadingMessage.innerHTML = `<span class="error">模型加载失败: ${error.message}</span>`;
+                    setTimeout(() => loading.classList.remove('active'), 3000);
+                    return false;
+                }
+            }
+            
+            // 开始人脸检测
+            async function startFaceDetection() {
+                // 确保模型已加载
+                if (!faceModel) {
+                    if (!await loadFaceModel()) return;
+                }
+                
+                // 每500ms检测一次人脸
+                faceDetectionInterval = setInterval(async () => {
+                    if (!faceModel) return;
+                    
+                    try {
+                        // 检测人脸
+                        const predictions = await faceModel.estimateFaces({
+                            input: video,
+                            returnTensors: false,
+                            flipHorizontal: false,
+                            predictIrises: true
+                        });
+                        
+                        // 清除之前的人脸标记点
+                        facePoints.forEach(point => point.remove());
+                        facePoints = [];
+                        
+                        if (predictions.length > 0) {
+                            // 更新状态
+                            statusText.innerHTML = `<i class="fas fa-check-circle"></i> 检测到 ${predictions.length} 张人脸`;
+                            
+                            // 标记每个人脸
+                            predictions.forEach(prediction => {
+                                // 获取关键点
+                                const keypoints = prediction.scaledMesh;
+                                
+                                // 标记关键点（只标记部分点以提高性能）
+                                for (let i = 0; i < keypoints.length; i += 10) {
+                                    const [x, y] = keypoints[i];
+                                    const dot = document.createElement('div');
+                                    dot.className = 'face-point';
+                                    dot.style.left = `${x}px`;
+                                    dot.style.top = `${y}px`;
+                                    document.querySelector('.camera-container').appendChild(dot);
+                                    facePoints.push(dot);
+                                }
+                            });
+                        } else {
+                            statusText.innerHTML = '<i class="fas fa-exclamation-circle"></i> 未检测到人脸';
+                        }
+                    } catch (error) {
+                        console.error('人脸检测失败:', error);
+                        statusText.innerHTML = '<i class="fas fa-exclamation-triangle"></i> 人脸检测失败';
+                    }
+                }, 500);
+            }
+            
+            // 拍照功能
+            function capturePhoto() {
+                // 暂停视频流
+                video.pause();
+                
+                // 创建Canvas
+                const width = video.videoWidth;
+                const height = video.videoHeight;
+                canvas.width = width;
+                canvas.height = height;
+                
+                // 绘制图像
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(video, 0, 0, width, height);
+                
+                // 转换为圆形图像
+                const circleCanvas = document.createElement('canvas');
+                const circleCtx = circleCanvas.getContext('2d');
+                const diameter = Math.min(width, height) * 0.7;
+                
+                circleCanvas.width = diameter;
+                circleCanvas.height = diameter;
+                
+                circleCtx.save();
+                circleCtx.beginPath();
+                circleCtx.arc(diameter/2, diameter/2, diameter/2, 0, Math.PI*2);
+                circleCtx.closePath();
+                circleCtx.clip();
+                
+                circleCtx.drawImage(
+                    canvas, 
+                    width/2 - diameter/2, 
+                    height/2 - diameter/2, 
+                    diameter, 
+                    diameter,
+                    0, 
+                    0, 
+                    diameter, 
+                    diameter
+                );
+                
+                circleCtx.restore();
+                
+                // 获取Base64图像
+                const base64Image = circleCanvas.toDataURL('image/jpeg', 0.9);
+                
+                // 显示结果
+                resultPhoto.src = base64Image;
+                resultContainer.classList.add('active');
+                
+                // 恢复视频
+                video.play();
+            }
+            
+            // 切换摄像头
+            function switchCamera() {
+                currentCamera = currentCamera === 1 ? 2 : 1;
+                initCamera(currentCamera);
+            }
+            
+            // 事件监听
+            captureBtn.addEventListener('click', capturePhoto);
+            switchBtn.addEventListener('click', switchCamera);
+            
+            retakeBtn.addEventListener('click', () => {
+                resultContainer.classList.remove('active');
+            });
+            
+            useBtn.addEventListener('click', () => {
+                loadingMessage.textContent = "正在处理照片，请稍候...";
+                loading.classList.add('active');
+                
+                // 在实际应用中，这里可以将base64图像上传到服务器
+                setTimeout(() => {
+                    loading.classList.remove('active');
+                    alert('照片处理完成！Base64数据已准备就绪');
+                    console.log('Base64图像数据:', resultPhoto.src.substring(0, 100) + '...');
+                }, 1500);
+            });
+            
+            // 初始化页面
+            function initPage() {
+                if (window.plus) {
+                    initCamera();
+                } else {
+                    document.addEventListener('plusready', initCamera);
+                }
+            }
+            
+            // 启动页面
+            initPage();
+        });
+    </script>
+</body>
+</html>
