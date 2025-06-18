@@ -50,7 +50,6 @@
 				border-radius: 50%;
 				overflow: hidden;
 				box-shadow: 0 0 0.2rem rgba(0, 0, 0, 0.3);
-				margin-top: -3rem;
 			}
 
 			#cameraVideo {
@@ -92,20 +91,19 @@
 			}
 
 			.controls {
-				position: absolute;
-				bottom: 50px;
 				width: 100%;
-				padding: 0 20px;
+				padding: 0 0.4rem;
 				z-index: 20;
 				text-align: center;
+				margin-top: 2rem;
 			}
 
 			.status-message {
-				color: white;
-				font-size: 0.14rem;
-				margin-bottom: 0.2rem;
+				color: #333;
+				font-size: 0.28rem;
+				margin-bottom: 0.4rem;
 				text-align: center;
-				padding: 0 0.2rem;
+				padding: 0 0.4rem;
 			}
 
 			.btn-container {
@@ -138,14 +136,15 @@
 
 			.countdown {
 				color: #d41e19;
-				font-size: 0.16rem;
+				font-size: 0.32rem;
 				margin-top: 0.2rem;
 				font-weight: bold;
+				margin-bottom: 0.2rem;
 			}
 
 			.success-message {
 				color: #4CAF50;
-				font-size: 0.16rem;
+				font-size: 0.32rem;
 				margin: 0.2rem 0;
 			}
 		</style>
@@ -166,7 +165,7 @@
 						<!-- 状态信息将由JS动态填充 -->
 					</div>
 					
-					<div id="countdown" class="countdown" style="display: none;">
+					<div id="countdown" class="countdown">
 						倒计时<span id="countdownValue">5</span>秒
 					</div>
 					
@@ -276,7 +275,6 @@
 			function updateUI() {
 				statusArea.innerHTML = '';
 				buttonArea.innerHTML = '';
-
 				switch (state.faceStatus) {
 					case 'Fail':
 						statusArea.innerHTML = '<div class="status-message">人脸识别验证失败</div>';
@@ -297,13 +295,13 @@
 						break;
 
 					default:
-						if (!document.querySelector('.camera-container').style.display) {
+						// if (!document.querySelector('.camera-container').style.display) {
 							statusArea.innerHTML = `
                             <div class="status-message">
                                 您正在进行考试认证,请将脸部置于采集框内，并确保由本人亲自操作
                             </div>
                         `;
-						}
+						// }
 
 						buttonArea.innerHTML = `
                         <div class="btn-container">
@@ -365,30 +363,40 @@
 				screenshotImg.style.display = 'block';
 
 				state.faceStatus = 'pending';
+				countdownElement.style.display = 'none'
 				updateUI();
 
-				// 模拟人脸识别API请求
-				setTimeout(() => {
-					// 这里模拟50%的成功率
-					const isSuccess = Math.random() > 0.5;
-
-					if (isSuccess) {
-						state.faceStatus = 'sucs';
-						// 模拟跳转到考试页面
-						setTimeout(() => {
-							alert('即将开始考试');
-							// window.location.href = 'exam.html';
-						}, 2000);
-					} else {
-						state.faceStatus = 'Fail';
-					}
-
-					updateUI();
-				}, 2000);
+				// 模拟请求
+				mock()
+				// 请求
+				// requestRecognition(imageDataURL)
 			}
-
+			
+			function mock () {
+				// 这里模拟50%的成功率
+				const isSuccess = Math.random() > 0.5;
+				
+				if (isSuccess) {
+					state.faceStatus = 'sucs';
+					// 模拟跳转到考试页面
+					setTimeout(() => {
+						alert('即将开始考试');
+						goExam();
+					}, 2000);
+				} else {
+					state.faceStatus = 'Fail';
+				}
+				updateUI();
+			}
+			
+			function goExam() {
+                uni.redirectTo({
+                    url: `/pages/course/Exam?tkhId=${PARAMS.appId}&&modId=${PARAMS.examId}&&itmId=${PARAMS.itmId}&&endTime=${PARAMS.endTime}`
+                })
+            }
+			
 			// 请求服务端
-			function requestRecognition() {
+			function requestRecognition(imageDataURL) {
 				// 获取存储的登录 URL
 				const loginUrl = PARAMS.host; // 替代 uni.getStorageSync
 
@@ -398,26 +406,24 @@
 
 				// 配置请求参数
 				xhr.open('POST', url, true);
+				xhr.setRequestHeader('token', PARAMS.token);
 				xhr.setRequestHeader('Content-Type', 'application/json'); // 明确设置 JSON 类型[5,6](@ref)
 				xhr.timeout = 60000; // 设置超时时间（单位：毫秒）
-
-				// 保留 this 引用（根据你的上下文可能需要调整）
-				const that = this;
 
 				// 响应处理逻辑
 				xhr.onload = function() {
 					if (xhr.status >= 200 && xhr.status < 300) {
 						try {
 							const res = JSON.parse(xhr.responseText);
-
-							if (res.data && res.data.resultCode === '200' && res.data.matchResult === '0') {
-								that.faceStuas = 'sucs';
-								setTimeout(() => that.goExam(), 3000);
+							if (res && res.resultCode === '200' && res.matchResult === '0') {
+								state.faceStatus = 'sucs'
+								setTimeout(() => goExam(), 3000);
 							} else {
 								handleFailure(res);
+								state.faceStatus = 'Fail'
 								// 显示服务器返回的错误信息
-								if (res.data && res.data.resultMsg) {
-									showToast(res.data.resultMsg); // 替代 plus.nativeUI.toast
+								if (res && res.resultMsg) {
+									showToast(res.resultMsg); // 替代 plus.nativeUI.toast
 								}
 							}
 						} catch (e) {
@@ -425,13 +431,16 @@
 								error: 'JSON 解析失败'
 							});
 							showToast('响应数据格式错误');
+							state.faceStatus = 'Fail';
 						}
 					} else {
 						handleFailure({
 							status: xhr.status
 						});
 						showToast(`请求失败，状态码: ${xhr.status}`);
+						state.faceStatus = 'Fail';
 					}
+					updateUI();
 				};
 
 				// 错误处理
@@ -440,6 +449,8 @@
 						error: '网络错误'
 					});
 					showToast('网络请求失败');
+					state.faceStatus = 'Fail';
+					updateUI();
 				};
 
 				// 超时处理
@@ -448,20 +459,21 @@
 						error: '请求超时'
 					});
 					showToast('请求已超时');
+					state.faceStatus = 'Fail';
+					updateUI();
 				};
 
 				// 发送请求（转换数据为 JSON 字符串）[6,7](@ref)
 				xhr.send(JSON.stringify({
-					imgBase: src,
+					imgBase: imageDataURL,
 					wsType: PARAMS.platform === 'ios' ? '2' : '3'
 				}));
 			}
 
 			// 公共失败处理函数
 			function handleFailure(res) {
-				that.faceStuas = 'Fail';
-				that.screenShotImg = '';
-				console.log(res, 'reess');
+				state.faceStuas = 'Fail';
+				screenshotImg.style.display = 'none';
 			}
 
 			// 替代 plus.nativeUI.toast
